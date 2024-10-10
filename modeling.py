@@ -16,6 +16,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.wav2vec2.configuration_wav2vec2 import Wav2Vec2Config
 from transformers import Wav2Vec2Model
 from transformers import AutoConfig
+from config import NUM_PHONEMES
 
 #### LOSS FUNCTIONS
 def distance_weighted_mse_loss(pred_probs, target, distance_weight=0.5, device='cpu'):
@@ -164,7 +165,7 @@ class MyWav2Vec2ForCTC(Wav2Vec2PreTrainedModel):
         log_probs = None
         loss = None
         if labels is not None:
-            if labels.max() >= num_phonemes:
+            if labels.max() >= NUM_PHONEMES:
                 raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
 
             # retrieve loss input_lengths from attention_mask
@@ -231,20 +232,28 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
 #         )
 
         self.phoneme_head = nn.Sequential(
+            PrintShape(),
             nn.Linear(self.wav2vec2.config.hidden_size, 1024),  # Increased units
+            nn.LayerNorm(1024),
             nn.ReLU(),
             nn.Linear(1024, 1024),  # Additional layer
+            nn.LayerNorm(1024),
             nn.ReLU(),
             nn.Linear(1024, config.vocab_size)  # Output layer
         )
 
         self.frame_start_head = nn.Sequential(
+            PrintShape(),
             nn.Linear(self.wav2vec2.config.hidden_size, 1024),  # Increased units
+            nn.LayerNorm(1024),
             nn.ReLU(),
             nn.Linear(1024, 1024),  # Additional layer
+            nn.LayerNorm(1024),
             nn.ReLU(),
             nn.Linear(1024, 1)  # Output layer
         )
+
+        print('INIT-ing with BatchNorm1d(1024)')
 
     def forward(self, input_values, phoneme_labels=None, frame_labels=None, return_log_probs=False):
         causal_lm_output, log_probs = self.wav2vec2(input_values, labels=phoneme_labels, return_log_probs=return_log_probs, output_hidden_states=True)
@@ -254,3 +263,11 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
         frame_start = self.frame_start_head(outputs).squeeze(-1)
         
         return phoneme_logits, frame_start, log_probs, causal_lm_output.loss
+
+class PrintShape(nn.Module):
+    def __init__(self):
+        super(PrintShape, self).__init__()
+    
+    def forward(self, x):
+        print(f"Shape: {x.shape}")
+        return x
