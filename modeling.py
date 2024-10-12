@@ -231,7 +231,6 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
 #         )
 
         self.phoneme_head = nn.Sequential(
-            PrintShape(),
             nn.Linear(self.wav2vec2.config.hidden_size, 1024),  # Increased units
             nn.LayerNorm(1024),
             nn.ReLU(),
@@ -242,7 +241,6 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
         )
 
         self.frame_start_head = nn.Sequential(
-            PrintShape(),
             nn.Linear(self.wav2vec2.config.hidden_size, 1024),  # Increased units
             nn.LayerNorm(1024),
             nn.ReLU(),
