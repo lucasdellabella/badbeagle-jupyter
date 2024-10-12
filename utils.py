@@ -8,13 +8,30 @@ from config import SAMPLE_RATE, WINDOW_SIZE
 from datetime import datetime
 from pathlib import Path
 
+def generate_attention_mask(input_values):
+    batch_size, sequence_length = input_values.shape
+    attention_mask = torch.zeros((batch_size, sequence_length), dtype=torch.long, device=input_values.device)
+    
+    for i in range(batch_size):
+        last_non_zero_idx = torch.nonzero(input_values[i], as_tuple=True)[0][-1].item()
+        attention_mask[i, :last_non_zero_idx + 1] = 1
+    
+    return attention_mask
+
 def frame_pos_to_nth_window(frame_position):
-    return torch.floor_divide(torch.divide(frame_position * 1000, SAMPLE_RATE) - 5, WINDOW_SIZE)
+    return torch.floor_divide(torch.divide(frame_position * 1000, SAMPLE_RATE) - 5, WINDOW_SIZE).to(dtype=torch.int)
 
 def get_audio_length_in_windows(audio):
     if len(audio.shape) != 1:
         raise ValueError("Need to pass a 1 dimensional vector in as arg")
     return int(frame_pos_to_nth_window(len(audio)).item())
+
+def get_audio_length_in_windows_batched(batched_audio):
+    if len(batched_audio.shape) != 2:
+        raise ValueError("Need to pass a 2 dimensional vector in as arg")
+    attn_mask = generate_attention_mask(batched_audio)
+    audio_length_in_frames = attn_mask.sum(-1)
+    return frame_pos_to_nth_window(audio_length_in_frames)
 
 def create_bit_mask_of_frame_start_positions(frame_positions_batch, num_of_windows):
     batch_size = frame_positions_batch.size(0)
