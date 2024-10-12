@@ -5,6 +5,8 @@ import soundfile as sf
 import os
 
 from config import SAMPLE_RATE, WINDOW_SIZE
+from datetime import datetime
+from pathlib import Path
 
 def frame_pos_to_nth_window(frame_position):
     return torch.floor_divide(torch.divide(frame_position * 1000, SAMPLE_RATE) - 5, WINDOW_SIZE)
@@ -44,3 +46,23 @@ def save_audio(audio_data, filename="sample_audio.wav"):
     sf.write(output_file, audio_data, SAMPLE_RATE)
 
     print(f"Audio saved to: {output_file}")
+
+
+def save_model(model, filename):
+    # Get current date and time
+    current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Create a filename with the datetime prefix
+    model_filename = f"{current_datetime}_{filename}.pth"
+
+    # Create a Path object for the models directory and the full file path
+    models_dir = Path("models")
+    model_path = models_dir / model_filename
+
+    # Create the models directory if it doesn't exist
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save the model
+    torch.save(model.state_dict(), model_path)
+
+    print(f"Model saved as: {model_path}")

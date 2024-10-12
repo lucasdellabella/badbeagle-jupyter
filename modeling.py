@@ -253,8 +253,6 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
             nn.Linear(1024, 1)  # Output layer
         )
 
-        print('INIT-ing with BatchNorm1d(1024)')
-
     def forward(self, input_values, phoneme_labels=None, frame_labels=None, return_log_probs=False):
         causal_lm_output, log_probs = self.wav2vec2(input_values, labels=phoneme_labels, return_log_probs=return_log_probs, output_hidden_states=True)
         outputs = causal_lm_output.hidden_states[-1]
