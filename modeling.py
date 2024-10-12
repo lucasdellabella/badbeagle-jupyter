@@ -137,7 +137,6 @@ class MyWav2Vec2ForCTC(Wav2Vec2PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         labels: Optional[torch.Tensor] = None,
-        return_log_probs: Optional[bool] = False,
     ) -> Union[Tuple, CausalLMOutput]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, target_length)`, *optional*):
@@ -253,14 +252,14 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
             nn.Linear(1024, 1)  # Output layer
         )
 
-    def forward(self, input_values, phoneme_labels=None, frame_labels=None, return_log_probs=False):
-        causal_lm_output, log_probs = self.wav2vec2(input_values, labels=phoneme_labels, return_log_probs=return_log_probs, output_hidden_states=True)
+    def forward(self, input_values, phoneme_labels=None):
+        causal_lm_output, _ = self.wav2vec2(input_values, labels=phoneme_labels, output_hidden_states=True)
         outputs = causal_lm_output.hidden_states[-1]
         
         phoneme_logits = self.phoneme_head(outputs)
         frame_start = self.frame_start_head(outputs).squeeze(-1)
         
-        return phoneme_logits, frame_start, log_probs, causal_lm_output.loss
+        return phoneme_logits, frame_start
 
 class PrintShape(nn.Module):
     def __init__(self):
