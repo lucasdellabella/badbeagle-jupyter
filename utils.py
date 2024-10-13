@@ -42,6 +42,53 @@ def create_bit_mask_of_frame_start_positions(frame_positions_batch, num_of_windo
         
     return bitmask_batch
 
+
+def get_class_id_for_each_frame(frame_start_indices, classes, input_length_in_frames):
+    batch_size = frame_start_indices.shape[0]
+    
+    # Create a mask for valid classes (not -100)
+    valid_mask = classes != -100
+    label_lengths = valid_mask.sum(dim=-1)
+    
+    # prep frame_start_indices ahead of 
+    additional_column = torch.zeros((batch_size, 1), dtype=torch.float, device=valid_mask.device)
+    frame_start_indices = torch.cat([frame_start_indices, additional_column], dim=1)
+
+    # Calculate the number of frames for each class
+    for i in range(batch_size):
+        batch_input_length = input_length_in_frames[i]
+        batch_label_length = label_lengths[i]
+        frame_start_indices[i][batch_label_length] = batch_input_length
+
+
+    frame_start_indices[:, 0] = 0
+    frame_counts = torch.diff(frame_start_indices, dim=1)
+    frame_counts = torch.where(valid_mask, frame_counts, torch.zeros_like(frame_counts))
+    
+    # Create a tensor to hold the result
+    max_frames = input_length_in_frames.max().item()
+    result = torch.full((batch_size, max_frames), -100, device=classes.device, dtype=classes.dtype)
+    
+    for i in range(batch_size):
+        valid_classes = classes[i][valid_mask[i]]
+        valid_counts = frame_counts[i][valid_mask[i]]
+        
+        # Valid_counts is wrong, the last value is incorrect
+        expanded = torch.repeat_interleave(valid_classes, valid_counts.long())
+        
+        # Trim or pad to match input_length_in_frames
+        if len(expanded) < input_length_in_frames[i]:
+            padding = torch.full((input_length_in_frames[i] - len(expanded),), valid_classes[-1], device=classes.device, dtype=classes.dtype)
+            expanded = torch.cat([expanded, padding])
+        else:
+            expanded = expanded[:input_length_in_frames[i]]
+        
+        # Fill the result tensor
+        result[i, :len(expanded)] = expanded
+
+    return result
+
+
 def example_pred_and_target():
     pred_probs = torch.tensor([[0.4, 0.6, 0.3, 0.8, 0.3, 0.9, 0.5, 0.5, 0.5, 0.5, 0.9]])
     target = torch.tensor([[0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1]])

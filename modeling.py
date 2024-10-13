@@ -16,6 +16,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.wav2vec2.configuration_wav2vec2 import Wav2Vec2Config
 from transformers import Wav2Vec2Model
 from transformers import AutoConfig
+from utils import frame_pos_to_nth_window, get_audio_length_in_windows_batched, get_class_id_for_each_frame
 from config import NUM_PHONEMES
 
 #### LOSS FUNCTIONS
@@ -43,8 +44,25 @@ def distance_weighted_mse_loss(pred_probs, target, distance_weight=0.5, device='
     return loss
 
 
-def custom_loss_function(phoneme_logits, frame_start, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, device='cpu'):
+def custom_loss_function_v2(phoneme_logits, frame_start, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, device='cpu'):
+    # Is this good enough for us as the input length compared to "input_length_in_frames = get_audio_length_in_windows_batched(batch['input_values']).to(device)""
+    print(frame_labels.shape[-1])
+
+    input_length_in_frames = frame_labels.shape
+    frame_positions = frame_pos_to_nth_window(frame_labels)
+    labels_actual = get_class_id_for_each_frame(frame_positions, phoneme_labels, input_length_in_frames)
     
+    phoneme_loss = nn.functional.cross_entropy(phoneme_logits, labels_actual)
+    
+    frame_start_loss = distance_weighted_mse_loss(frame_start, frame_labels.float(), device=device)
+    
+    total_loss = phoneme_loss + frame_start_loss * 20
+    
+    return total_loss, phoneme_loss, frame_start_loss
+
+
+def custom_loss_function(phoneme_logits, frame_start, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, device='cpu'):
+
     phoneme_probs = nn.functional.softmax(phoneme_logits, dim=-1)
     phoneme_loss = nn.functional.ctc_loss(torch.log(phoneme_probs.transpose(0, 1)), phoneme_labels, input_lengths, phoneme_lengths)
     
@@ -215,21 +233,6 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
         if (dropout_rate != None):
             self.dropout = nn.Dropout(dropout_rate)
             
-        # self.phoneme_head = nn.Linear(self.wav2vec2.config.hidden_size, config.vocab_size)
-        # self.frame_start_head = nn.Linear(self.wav2vec2.config.hidden_size, 1)
-        
-#         self.phoneme_head = nn.Sequential(
-#             nn.Linear(self.wav2vec2.config.hidden_size, 512),  # First layer with increased units
-#             nn.ReLU(),
-#             nn.Linear(512, config.vocab_size)  # Output layer
-#         )
-
-#         self.frame_start_head = nn.Sequential(
-#             nn.Linear(self.wav2vec2.config.hidden_size, 512),  # First layer with increased units
-#             nn.ReLU(),
-#             nn.Linear(512, 1)  # Output layer
-#         )
-
         self.phoneme_head = nn.Sequential(
             nn.Linear(self.wav2vec2.config.hidden_size, 1024),  # Increased units
             nn.LayerNorm(1024),
