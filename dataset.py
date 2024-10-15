@@ -28,6 +28,8 @@ class DataCollatorForAudioWithPadding:
         # Separate audio input values from labels since they need different padding methods
         input_features = [{"input_values": feature["audio"]} for feature in features]
         labels = [{"labels": feature["labels"]} for feature in features]
+        phoneme_labels_CE = [feature["phoneme_labels_CE"] for feature in features]
+        frame_labels_CE = [feature["frame_labels_CE"] for feature in features]
 
         # Pad audio input features
         batch = self.processor.pad(
@@ -54,7 +56,19 @@ class DataCollatorForAudioWithPadding:
             padded_labels_utterance[i, :label_length] = torch.tensor(self.tokenizer.convert_tokens_to_ids(label["labels"]['utterance']), dtype=torch.long)
             padded_labels = {'phoneme_start_idx': padded_labels_start_idx, 'utterance': padded_labels_utterance}
 
+
+        max_ce_label_length = max(len(row) for row in frame_labels_CE)
+        padded_phoneme_labels_CE = torch.full((len(features), max_ce_label_length), -100, dtype=torch.long)  # Using -100 as the padding value for labels
+        padded_frame_labels_CE = torch.full((len(features), max_ce_label_length), -100, dtype=torch.long)  # Using -100 as the padding value for labels
+
+        for i in range(len(features)):
+            label_length = len(phoneme_labels_CE[i])
+            padded_phoneme_labels_CE[i, :label_length] = torch.tensor(phoneme_labels_CE[i], dtype=torch.long)
+            padded_frame_labels_CE[i, :label_length] = torch.tensor(frame_labels_CE[i])
+        
         batch["labels"] = padded_labels
+        batch["phoneme_labels_CE"] = padded_phoneme_labels_CE
+        batch["frame_labels_CE"] = padded_frame_labels_CE
 
         return batch
     

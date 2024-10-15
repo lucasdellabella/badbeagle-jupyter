@@ -22,10 +22,12 @@ def calculate_phoneme_metrics(phoneme_logits, phoneme_labels):
         tuple: (phoneme_precision, phoneme_recall, phoneme_f1)
     """
     phoneme_preds = torch.argmax(phoneme_logits, dim=-1)
+    phoneme_accuracy = torchmetrics.functional.accuracy(phoneme_preds, phoneme_labels, task='multiclass', num_classes=NUM_PHONEMES)
     phoneme_precision = torchmetrics.functional.precision(phoneme_preds, phoneme_labels, task='multiclass', num_classes=NUM_PHONEMES)
     phoneme_recall = torchmetrics.functional.recall(phoneme_preds, phoneme_labels, task='multiclass', num_classes=NUM_PHONEMES)
     phoneme_f1 = torchmetrics.functional.f1_score(phoneme_preds, phoneme_labels, task='multiclass', num_classes=NUM_PHONEMES)
     return {
+        "accuracy": phoneme_accuracy,
         "precision": phoneme_precision,
         "recall": phoneme_recall,
         "f1": phoneme_f1
@@ -33,10 +35,12 @@ def calculate_phoneme_metrics(phoneme_logits, phoneme_labels):
 
 def calculate_frame_metrics(start_idx_pred, frame_bitmask_labels):
     frame_preds = (start_idx_pred > 0.5).float()
+    frame_accuracy = torchmetrics.functional.accuracy(frame_preds, frame_bitmask_labels, task='binary')
     frame_precision = torchmetrics.functional.precision(frame_preds, frame_bitmask_labels, task='binary')
     frame_recall = torchmetrics.functional.recall(frame_preds, frame_bitmask_labels, task='binary')
     frame_f1 = torchmetrics.functional.f1_score(frame_preds, frame_bitmask_labels, task='binary')
     return {
+        "accuracy": frame_accuracy,
         "precision": frame_precision,
         "recall": frame_recall,
         "f1": frame_f1

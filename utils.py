@@ -60,7 +60,6 @@ def get_class_id_for_each_frame(frame_start_indices, classes, input_length_in_fr
         batch_label_length = label_lengths[i]
         frame_start_indices[i][batch_label_length] = batch_input_length
 
-
     frame_start_indices[:, 0] = 0
     frame_counts = torch.diff(frame_start_indices, dim=1)
     frame_counts = torch.where(valid_mask, frame_counts, torch.zeros_like(frame_counts))

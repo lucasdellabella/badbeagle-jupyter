@@ -16,7 +16,6 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.wav2vec2.configuration_wav2vec2 import Wav2Vec2Config
 from transformers import Wav2Vec2Model
 from transformers import AutoConfig
-from utils import frame_pos_to_nth_window, get_audio_length_in_windows_batched, get_class_id_for_each_frame
 from config import NUM_PHONEMES
 
 #### LOSS FUNCTIONS
@@ -44,24 +43,38 @@ def distance_weighted_mse_loss(pred_probs, target, distance_weight=0.5, device='
     return loss
 
 
-def custom_loss_function_v2(phoneme_logits, frame_start, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, device='cpu'):
-    # Is this good enough for us as the input length compared to "input_length_in_frames = get_audio_length_in_windows_batched(batch['input_values']).to(device)""
-    print(frame_labels.shape[-1])
-
-    input_length_in_frames = frame_labels.shape
-    frame_positions = frame_pos_to_nth_window(frame_labels)
-    labels_actual = get_class_id_for_each_frame(frame_positions, phoneme_labels, input_length_in_frames)
+def custom_bce_with_logits_loss(logits, targets, padding_mask=None):
+    loss_fct = nn.BCEWithLogitsLoss(reduction='none')
+    loss = loss_fct(logits, targets)
     
-    phoneme_loss = nn.functional.cross_entropy(phoneme_logits, labels_actual)
-    
-    frame_start_loss = distance_weighted_mse_loss(frame_start, frame_labels.float(), device=device)
-    
-    total_loss = phoneme_loss + frame_start_loss * 20
-    
-    return total_loss, phoneme_loss, frame_start_loss
+    if padding_mask is not None:
+        # Apply mask (1 for valid positions, 0 for padding)
+        loss = loss * padding_mask
+        # Compute mean only over non-padded elements
+        return loss.sum() / padding_mask.sum()
+    else:
+        return loss.mean()
 
 
-def custom_loss_function(phoneme_logits, frame_start, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, device='cpu'):
+def custom_loss_function(phoneme_logits, frame_pred, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, phoneme_weights, frame_weights, device='cpu'):
+    reshaped_phoneme_logits = phoneme_logits.permute(0, 2, 1)
+    phoneme_loss = nn.functional.cross_entropy(reshaped_phoneme_logits, phoneme_labels)
+    
+    padding = frame_labels == -100
+
+    frame_pred_fixed = torch.clone(frame_pred)
+    frame_labels_fixed = torch.clone(frame_labels)
+    frame_pred_fixed[padding] = 0
+    frame_labels_fixed[padding] = 0
+    frame_pred_loss = nn.functional.binary_cross_entropy(frame_pred_fixed, frame_labels_fixed.float())
+    # frame_pred_loss = distance_weighted_mse_loss(frame_pred, frame_labels.float(), device=device)
+    
+    total_loss = phoneme_loss + frame_pred_loss
+    
+    return total_loss, phoneme_loss, frame_pred_loss
+
+
+def custom_loss_function_v0(phoneme_logits, frame_start, phoneme_labels, frame_labels, input_lengths, phoneme_lengths, device='cpu'):
 
     phoneme_probs = nn.functional.softmax(phoneme_logits, dim=-1)
     phoneme_loss = nn.functional.ctc_loss(torch.log(phoneme_probs.transpose(0, 1)), phoneme_labels, input_lengths, phoneme_lengths)
@@ -226,6 +239,8 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
         self.wav2vec2 = MyWav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h", 
                                                          ignore_mismatched_sizes=True,
                                                         config=config)
+
+        self.wav2vec2.freeze_base_model()
         
         if (freeze_feature_encoder):
             self.wav2vec2.freeze_feature_encoder()
@@ -244,13 +259,17 @@ class Wav2Vec2ForPhonemeAndFramePrediction(nn.Module):
         )
 
         self.frame_start_head = nn.Sequential(
-            nn.Linear(self.wav2vec2.config.hidden_size, 1024),  # Increased units
+            nn.Linear(self.wav2vec2.config.hidden_size, 4096),  # Increased units
+            nn.LayerNorm(4096),
+            nn.ReLU(),
+            nn.Linear(4096, 2048),  # Additional layer
+            nn.LayerNorm(2048),
+            nn.ReLU(),
+            nn.Linear(2048, 1024),  # Additional layer
             nn.LayerNorm(1024),
             nn.ReLU(),
-            nn.Linear(1024, 1024),  # Additional layer
-            nn.LayerNorm(1024),
-            nn.ReLU(),
-            nn.Linear(1024, 1)  # Output layer
+            nn.Linear(1024, 1),  # Output layer
+            nn.Sigmoid()
         )
 
     def forward(self, input_values, phoneme_labels=None):
